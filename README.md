@@ -99,9 +99,33 @@ ellm/
 ├── lattice/                 # Rust side-car workspace (ellm-lattice + ellm-attn)
 ├── ellm/                    # Python package (lattice client, model, travel, train, serve)
 ├── notebooks/               # one notebook per phase (00–06)
+├── deploy/                  # the podman-compose demo (Containerfile, build.sh, run.sh)
+├── scripts/                 # smoke tests, ingestion, growth experiment
 ├── tests/
 └── pyproject.toml
 ```
+
+## Deployable demo (two containers, one shared lattice)
+
+```bash
+./deploy/run.sh
+# → open http://localhost:8080
+```
+
+`run.sh` builds the Rust side-car (release) if needed, builds the
+`ellm-demo:cpu` image, and starts two containers with `podman-compose`
+(falling back to `podman compose`):
+
+* **ellm** — the browser-facing eLLM (web UI + JSON API on :8080), its own
+  side-car, its own codebook gate (`tid1..16`).
+* **host_b** — a second LLM with its own side-car and gate (`tid17..32`).
+
+Both containers share the `lattice-store` volume (the persistent HLLSet
+lattice); the eLLM broadcasts each turn's HLLSet to every door over HTTP and
+hires the door whose codebook covers it. If an NVIDIA GPU is present,
+`run.sh` builds the GPU image and applies `deploy/podman-compose.gpu.yml`
+(CDI passthrough + local HF cache), and the eLLM loads Qwen2.5-1.5B.
+Otherwise the demo runs CPU-only with the deterministic stub generator.
 
 ## Phases
 
@@ -115,8 +139,8 @@ only candidate); phase 6 attaches a second LLM and demonstrates growth.
 | 2 | the door: materialize-to-prompt with coverage invariant; the eLLM's own codebook gate (single-LLM case) | done |
 | 3 | door-guard broadcast seam at N=1 (degenerate self-selection): Mode B discovery + `door_probe` verdict on the eLLM's own side-car + selection | done |
 | 4 | two-process split + closed travel loop at N=1; surprise-gated door policy v0 | done |
-| 5 | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first); optional Mode C λ | next |
-| 6 | growth experiment: attach a second LLM (own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`); broadcast collects two door verdicts with no change to the eLLM | |
+| 5 | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first); optional Mode C λ | done |
+| 6 | growth experiment: attach a second LLM (own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`); broadcast collects two door verdicts with no change to the eLLM | done |
 
 ## License
 

@@ -103,6 +103,12 @@ struct SetKeyHexArgs {
 }
 
 #[derive(Deserialize)]
+struct PopcountHexArgs {
+    /// HLLSet bytes as hex.
+    nodes: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct PolicyPutArgs {
     policy: Value,
 }
@@ -164,6 +170,7 @@ impl<S: ObjectStore> Service<S> {
             "policy_get" => self.handle_policy_get(request.id),
             "setkey" => handle_setkey(request.id, request.args),
             "setkey_hex" => handle_setkey_hex(request.id, request.args),
+            "popcount_hex" => handle_popcount_hex(request.id, request.args),
             other => error(request.id, format!("unknown command: {other}")),
         }
     }
@@ -187,12 +194,19 @@ impl<S: ObjectStore> Service<S> {
                         })
                     })
                     .unwrap_or(Value::Null);
+                let turn_hex = self
+                    .cache
+                    .turns
+                    .last()
+                    .map(|t| hex::encode(t.g1.to_bytes()))
+                    .unwrap_or_default();
                 ok(
                     id,
                     json!({
                         "commit": outcome.commit.as_ref().map(|c| c.as_str()),
                         "head": outcome.head.as_ref().map(|c| c.as_str()),
                         "dnr": dnr,
+                        "turn_hex": turn_hex,
                         "restored_ids": outcome.restored_ids,
                         "ring": {
                             "residual": outcome.ring_stats.residual,
@@ -553,6 +567,20 @@ fn handle_setkey_hex(id: String, args: Value) -> String {
             "scores": scores,
         }),
     )
+}
+
+/// Popcounts of raw HLLSet bytes — a ranker feature (candidate sizes).
+fn handle_popcount_hex(id: String, args: Value) -> String {
+    let args: PopcountHexArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => return error(id, format!("popcount_hex args: {e}")),
+    };
+    let nodes: Vec<HLLSet> = match args.nodes.iter().map(|n| decode_hllset(n)).collect() {
+        Ok(n) => n,
+        Err(e) => return error(id, format!("popcount_hex node: {e}")),
+    };
+    let pops: Vec<u64> = nodes.iter().map(|n| n.popcount()).collect();
+    ok(id, json!({ "pops": pops }))
 }
 
 fn handle_setkey(id: String, args: Value) -> String {

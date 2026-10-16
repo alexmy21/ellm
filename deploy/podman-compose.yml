@@ -1,0 +1,35 @@
+services:
+  ellm:
+    image: ellm-demo:cpu
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    environment:
+      ELLM_ROLE: ellm
+      ELLM_NAME: ellm
+      ELLM_PORT: "8080"
+      ELLM_REPO: /lattice-store/ellm
+      ELLM_GATE_RANGE: "1,16"
+      ELLM_REMOTE_DOORS: "host_b=http://host_b:8001"
+      ELLM_BINARY: /usr/local/bin/ellm-lattice
+    ports:
+      - "8080:8080"
+    volumes:
+      - lattice-store:/lattice-store
+    depends_on:
+      - host_b
+
+  host_b:
+    image: ellm-demo:cpu
+    environment:
+      ELLM_ROLE: host
+      ELLM_NAME: host_b
+      ELLM_PORT: "8001"
+      ELLM_REPO: /lattice-store/host_b
+      ELLM_GATE_RANGE: "17,32"
+      ELLM_BINARY: /usr/local/bin/ellm-lattice
+    volumes:
+      - lattice-store:/lattice-store
+
+volumes:
+  lattice-store:

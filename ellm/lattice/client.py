@@ -136,6 +136,11 @@ class LatticeClient:
         data = self._call("setkey_hex", {"query": query_hex, "nodes": nodes_hex})
         return data["scores"]
 
+    def popcount_hex(self, nodes_hex: list[str]) -> list[int]:
+        """Popcounts of raw HLLSet bytes (ranker feature: candidate sizes)."""
+        data = self._call("popcount_hex", {"nodes": nodes_hex})
+        return data["pops"]
+
     def setkey(self, query: list[str], nodes: list[list[str]]) -> list[float]:
         """Mode B scores of one query HLLSet against candidate node HLLSets."""
         data = self._call("setkey", {"query": query, "nodes": nodes})

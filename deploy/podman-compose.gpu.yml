@@ -1,0 +1,16 @@
+# GPU overlay — apply with:
+#   podman-compose -f deploy/podman-compose.yml -f deploy/podman-compose.gpu.yml up
+#
+# Gives the eLLM container the host GPU via CDI (`nvidia.com/gpu=all`) and the
+# local HF cache read-only, and switches it to the GPU image. host_b stays on
+# the CPU image (its stub LLM needs no GPU).
+services:
+  ellm:
+    image: ellm-demo:gpu
+    devices:
+      - nvidia.com/gpu=all
+    environment:
+      ELLM_USE_GPU: "1"
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface:ro

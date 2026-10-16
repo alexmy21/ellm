@@ -1,6 +1,6 @@
 # eLLM — Emerging LLM Architecture
 
-> **Status:** architecture definition + **Phase 0–4 complete** (workspace, full `ellm-attn`, real lattice protocol, the door, the broadcast seam, the two-process loop), 2026-10-15.
+> **Status:** architecture definition + **Phase 0–6 complete** + **deployable demo** (two-container podman-compose network, shared lattice volume, browser UI, optional GPU passthrough), 2026-10-15.
 > **Scope:** a **local LLM with the full travel loop** — a small transformer that
 > runs on the RTX 3060 12 GB, uses `ewm-state-machine` as its exact,
 > content-addressed memory (the map), materializes/ingests through the door,
@@ -189,15 +189,15 @@ asymmetry:
   ordinary linear buffer. They benefit from the map, but they do not manage
   it.
 * **The eLLM** manages its context **as lattice nodes, natively**:
-  - its **context window is a managed working set** — *shrink* (meet with the
+  * its **context window is a managed working set** — *shrink* (meet with the
     query, restrict to a sub-lattice, minimal cover) and *expand* (join
     neighbors, lower the BSS threshold, add bootstrap n-gram views) happen on
     HLLSets **before** materialization;
-  - its **KV cache is the commit DAG**, its **residual stream is the union
+  * its **KV cache is the commit DAG**, its **residual stream is the union
     invariant** with the `D/R/N` write/keep/drop reading;
-  - it commits its own generations as new nodes and materializes its own
+  * it commits its own generations as new nodes and materializes its own
     context on demand (the surprise-gated door);
-  - its attention can be steered by the exact engine (Mode B lookup, Mode C
+  * its attention can be steered by the exact engine (Mode B lookup, Mode C
     hybrid) because it reads the same plane it writes to.
 
 The travel loop is therefore not a wrapper around an LLM — it is **the eLLM's
@@ -297,10 +297,10 @@ The system is built to **start with a single LLM and grow by attachment**:
   running its own ewm-sm side-car with its own LUTs, its own `hllsetLUT`, and
   its own `H(t)`. The candidate set has exactly one member — the eLLM's
   `H(t)` — so the full pipeline runs **degenerate but real**:
-  - the gate passes the eLLM's own `hllsetLUT` entry (`th > 0`);
-  - the eLLM discovers its `H(t)` and broadcasts it;
-  - its own door guard answers `can_restore = true` (coverage = 1.0);
-  - the agent selects **self**, and the eLLM generates.
+  * the gate passes the eLLM's own `hllsetLUT` entry (`th > 0`);
+  * the eLLM discovers its `H(t)` and broadcasts it;
+  * its own door guard answers `can_restore = true` (coverage = 1.0);
+  * the agent selects **self**, and the eLLM generates.
 * **Growth by attachment.** Attaching a new LLM means standing up its own
   ewm-sm side-car (own LUTs, own `hllsetLUT`, own `H(t)`, own codebook gate,
   own `door.py`). It starts answering broadcasts automatically — the eLLM now
@@ -346,7 +346,7 @@ change to the eLLM.
 │  ellm.lattice           client; commands: ping/ingest/materialize/      │
 │                         state/commit/hllset_lut/gate/to_prompt/         │
 │                         door_probe/policy_put/policy_get/setkey/        │
-│                         setkey_hex                                      │
+│                         setkey_hex/popcount_hex                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  LAYER 1 · LATTICE SIDE-CAR (Rust workspace: lattice/)                  │
 │  ellm-lattice           CLI service reusing ewm-state-machine crates    │
@@ -570,8 +570,11 @@ ellm/
 │   ├── travel/                  # travel-loop controller + door policy
 │   ├── curriculum/              # sampling strategies
 │   ├── train/                   # window driver, guards, checkpoints
-│   └── serve/                   # local server (broadcast + generator + selection)
+│   └── serve/                   # broadcast + generator + selection + HTTP demo server
+├── deploy/                      # podman-compose demo (Containerfile, build.sh, run.sh,
+│                                #   podman-compose.yml, podman-compose.gpu.yml)
 ├── notebooks/                   # one notebook per phase (00–06)
+├── scripts/                     # smoke tests, ingestion, growth experiment
 ├── tests/                       # Python + Rust integration tests
 ├── pyproject.toml
 └── README.md
@@ -619,8 +622,9 @@ only candidate); phase 6 attaches a second LLM and demonstrates growth.
 | **2** | the door: materialize-to-prompt with coverage invariant; the eLLM's own codebook gate (single-LLM case); probes held out | **done** |
 | **3** | door-guard broadcast seam at N=1 (degenerate self-selection): Mode B discovery (`setkey`/`setkey_hex`) + `door_probe` verdict on the eLLM's own side-car; `BroadcastDispatcher` + `NativeStubPolicy` + selection (0→fallback, 1→hire, >1→user) | **done** |
 | **4** | two-process split + closed travel loop at N=1: `TravelServer` (broadcast + generate + selection, policy hot-swap) and `Trainer` (scheduler + WIP learner + guard set, commit-as-publication via the `@policy` slot in the shared ewm-git store); `Service<LooseStore>` (disk-persisted side-car, `ellm-lattice <repo>`); surprise-gated door policy v0 | **done** |
-| **5** | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first, soft-label KL vs native labels); optional Mode C λ; guard set; evaluation | next |
-| **6** | growth experiment: **attach a second LLM** (its own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`); the broadcast collects two door verdicts with **no change to the eLLM**; full travel loop with lattice memory; publish numbers | |
+| **5** | first learned policy at N=1: `QwenBroadcastRanker` (LoRA on Qwen2.5-1.5B + score head over lattice-state prompts), soft-label KL vs native ring-basis labels (`collect_samples`), real guard set (probe accuracy, regression slack, progress gain), `QwenGenerator` behind the `Generator` protocol; evaluation on held-out probes | **done** |
+| **6** | growth experiment: **attach a second LLM** — `HostLLM` (own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`), `DoorNetwork` (one side-car per LLM, attach = add an endpoint), `turn_hex` (per-turn HLLSet as the broadcast candidate); disjoint codebooks route to self/host/fallback, overlapping codebooks escalate to the CEO; **no change to the eLLM** (`scripts/growth_experiment.py` publishes the table) | **done** |
+| **7** | *(candidate)* **the NCM bridge**: HLLSet lattice as the **coarse level** of coarse-to-fine generation (Next-Concept Modeling, HazyResearch 2026). The sub-lattice is the scale pyramid (shrink = coarser, expand = finer); the door is the concept→detail decoder; a parallel fine decoder inside the materialized node is the NCM-style speed engine. See §11.7 | candidate |
 
 Each phase lands with a notebook in `notebooks/` and a baseline test count, in
 the gen2 style.
@@ -645,6 +649,34 @@ the gen2 style.
    `local_files_only=True`; every experiment must replay bit-identically.
 6. **Cost sharing**: policy learning competes with serving for the same RTX
    3060; the postponed-commit scheduler (§3.5) is the throttle.
+7. **The NCM bridge (coarse-to-fine generation).** Next-Concept Modeling
+   (HazyResearch, 2026) generates text from a hierarchy of learned discrete
+   codes — few coarse codes first, then parallel refinement per level
+   (9–31× faster than diffusion). The eLLM already runs the same shape with a
+   **structural** coarse level: the HLLSet lattice node is the concept, the
+   door (`materialize`, coverage = 1.0) is the concept→detail decoder, and
+   attention inside the materialized node is the fine generation. Candidate
+   direction: the **sub-lattice as the scale pyramid** (shrink = coarser,
+   expand = finer — no learned VQ hierarchy needed), the broadcast as
+   parallel next-concept selection, and an NCM-style parallel fine decoder
+   inside the node.
+
+   **Order is already structural, not an open risk.** For sequential streams
+   (text, image patches) the ordered path uses the **padded n-gram scheme**:
+   ingest writes 1-/2-/3-gram channels, and materialize restores order via
+   the **De Bruijn chain** anchored at the start pad — count-constrained
+   TF-scored decoding over the graph (1-gram = vocabulary, 2-/3-gram =
+   edges), with beam 1 = greedy, beam > 1 = top-k paths. The native LLM
+   encodings are therefore delivered **in restored order**; the flat n-seed
+   scheme (unordered, per-token atoms) is reserved for codebook gates and
+   catalog keys, where order is intentionally irrelevant. Open sub-questions
+   become: (a) does the lossy HLLSet sketch carry enough "gist" at the
+   coarsest levels? (b) can the De Bruijn restoration double as NCM's
+   "cumulative reconstruction" conditioning for the fine decoder (its beam
+   decoding is already the same shape as LLM token generation)? (c) does Mode
+   C hybrid scoring give the binary lattice the smoothness the fine decoder
+   needs? Risk: the lattice makes the coarse level exact, not faster — the
+   speed gain must come from the parallel fine decoder.
 
 ---
 

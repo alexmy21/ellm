@@ -75,11 +75,23 @@ class NativeStubPolicy:
 
 
 class BroadcastDispatcher:
-    """The recruiter: sources candidates, broadcasts them, collects verdicts."""
+    """The recruiter: sources candidates, broadcasts them, collects verdicts.
 
-    def __init__(self, client: LatticeClient, policy: BroadcastPolicy | None = None):
+    `network` is the door network: `None` keeps the N=1 behaviour (probe the
+    dispatcher's own side-car, which answers for every gate registered on
+    it); at N=2+ a [`DoorNetwork`](doors.py) broadcasts to one side-car per
+    LLM.
+    """
+
+    def __init__(
+        self,
+        client: LatticeClient,
+        policy: BroadcastPolicy | None = None,
+        network: object | None = None,
+    ):
         self.client = client
         self.policy = policy or NativeStubPolicy(client)
+        self.network = network
 
     def candidates(self) -> list[str]:
         """Source candidates. At N=1: the eLLM's own working set S(t)."""
@@ -93,6 +105,8 @@ class BroadcastDispatcher:
 
     def broadcast(self, hllset_hex: str) -> list[Verdict]:
         """Send one candidate to every door; collect verdicts."""
+        if self.network is not None:
+            return self.network.broadcast(hllset_hex)
         raw = self.client.door_probe(hllset_hex)
         return [
             Verdict(

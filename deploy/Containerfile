@@ -1,0 +1,30 @@
+# The eLLM demo image — one image, every container role.
+#
+#   CPU image (default):
+#     podman build -t ellm-demo:cpu -f deploy/Containerfile .
+#
+#   GPU image (optional; torch lives in the base image):
+#     podman build \
+#       --build-arg BASE_IMAGE=pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime \
+#       --build-arg ELLM_EXTRAS="transformers peft" \
+#       -t ellm-demo:gpu -f deploy/Containerfile .
+
+ARG BASE_IMAGE=python:3.10-slim
+FROM ${BASE_IMAGE}
+
+ARG ELLM_EXTRAS=""
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# The Rust side-car is built on the host (see deploy/build.sh) and copied in.
+COPY lattice/target/release/ellm-lattice /usr/local/bin/ellm-lattice
+
+# Install the ellm package (no hard deps for the demo server: stdlib only).
+COPY pyproject.toml README.md ./
+COPY ellm/ ./ellm/
+RUN pip install . ${ELLM_EXTRAS}
+
+EXPOSE 8080 8001
+CMD ["python", "-m", "ellm.serve.http"]
