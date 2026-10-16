@@ -60,8 +60,8 @@ broadcast dispatcher.
         │  D/R/N · ring · windows                     │
         ▼                                             ▼
    LatticeState ──▶ discover HLLSet candidates ──▶ broadcast to every door
-                        │                              │  door verdicts
-                        ▼                              ▼
+                        │                             │  door verdicts
+                        ▼                             ▼
                  select target (0→fallback, 1→route, >1→user)
 ```
 
@@ -321,13 +321,13 @@ change to the eLLM.
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  LAYER 4 · SERVING & TRAINING (Python, PyTorch · ewm-nanolm env)        │
 │  ┌────────────────────────────┐        ┌────────────────────────────┐   │
-│  │  SERVER (broadcast+gen)      │        │  TRAINER (policy learner)  │   │
+│  │  SERVER (broadcast+gen)    │        │  TRAINER (policy learner)  │   │
 │  │  · reads committed policy  │        │  · owns scheduler          │   │
 │  │  · never blocks            │        │  · WIP → learn → guard     │   │
 │  │  · broadcasts / generates  │        │  · commits at slow time    │   │
 │  └─────────────┬──────────────┘        └─────────────┬──────────────┘   │
-│                │  read tip                          │  commit           │
-│                ▼                                    ▼                   │
+│                │  read tip                           │  commit          │
+│                ▼                                     ▼                  │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │  THE STORE — ewm-state-machine three-location memory              │  │
 │  │    WIP (in-memory) · cache (Arrow, c:<sha1>) · persisted (ewm-git)│  │
@@ -335,7 +335,8 @@ change to the eLLM.
 ├─────────────────────────────────────────────────────────────────────────┤
 │  LAYER 3 · eLLM RUNTIME (Python, PyTorch · RTX 3060)                    │
 │  ellm.model.base        Qwen2.5-1.5B-Instruct (local_files_only)        │
-│  ellm.model.ranker       broadcast policy: discover/order HLLSet candidates│
+│  ellm.model.ranker      broadcast policy: discover/order HLLSet         |
+|                         candidates                                      │
 │  ellm.model.lora        PEFT/LoRA adapters (attention projections)      │
 │  ellm.travel            the travel-loop controller (six-step turn,      │
 │                         shrink/expand, surprise-gated door policy)      │
@@ -385,7 +386,7 @@ A thin Rust workspace (`lattice/`) with two crates:
   (mirrors the existing `ewm-state-machine/trainer/ewm.py` pattern). Commands:
 
   ```text
-  ingest    {turn_id, tokens[]}                    → {key, g1, popcount, coverage}
+  ingest    {turn_id, tokens[]}                   → {key, g1, popcount, coverage}
   state     {}                                    → {tip, S(t), H(t-1), D, R, N,
                                                     ring:{dim,residual,in_span,
                                                     soft_key,hard_key,spill},
@@ -471,12 +472,13 @@ spirit:
  2  ingest      μ(tokens) → query HLLSet Q = I(prompt)          [Rust: ingest]
  3  traverse    score context nodes vs Q (BSS/Jaccard/overlap), [Rust: setkey]
                 select working set (threshold θ); shrink/expand
- 4  materialize selected node → token context C_tok              [Rust: materialize]
+ 4  materialize selected node → token context C_tok             [Rust: materialize]
                 (coverage guard: confidence = 1.0)
- 5  broadcast   gate candidates via per-host hllsetLUTs;         [Rust: setkey
+ 5  broadcast   gate candidates via per-host hllsetLUTs;        [Rust: setkey
                 discover which HLLSets to send; broadcast to       + Python: policy]
-                every door; collect verdicts {coverage, can_restore};
-                agent selects target (0→fallback, 1→route, >1→user)
+                every door; collect verdicts {coverage, 
+                can_restore}; agent selects target (0→fallback, 
+                1→route, >1→user)
  6  move        chosen speaker generates inside C_tok            [Python: base LLM]
                 (self = Mode C hybrid attention, λ optional)
  7  ingest      generated tokens → new node N'                   [Rust: ingest]
