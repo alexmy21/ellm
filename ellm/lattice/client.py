@@ -15,10 +15,13 @@ class LatticeError(RuntimeError):
 class LatticeClient:
     """A subprocess client for the `ellm-lattice` Rust binary."""
 
-    def __init__(self, binary: str | None = None):
+    def __init__(self, binary: str | None = None, repo_path: str | None = None):
         self.binary = binary or self._find_binary()
+        cmd = [self.binary]
+        if repo_path is not None:
+            cmd.append(repo_path)
         self._proc = subprocess.Popen(
-            [self.binary],
+            cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -119,6 +122,14 @@ class LatticeClient:
             args["user"] = user
         data = self._call("door_probe", args)
         return data["verdicts"]
+
+    def policy_put(self, policy: dict[str, Any]) -> dict[str, Any]:
+        """Publish the active policy (the trainer's commit-as-publication)."""
+        return self._call("policy_put", {"policy": policy})
+
+    def policy_get(self) -> dict[str, Any] | None:
+        """Read the active policy (the server's hot-swap read)."""
+        return self._call("policy_get")["policy"]
 
     def setkey_hex(self, query_hex: str, nodes_hex: list[str]) -> list[float]:
         """Mode B scores over raw HLLSet bytes (discovery scorer)."""

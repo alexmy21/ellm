@@ -17,15 +17,23 @@
 //! - `commit`      → force-commit the current working set (`args: {"message": "…"}`)
 //! - `hllset_lut`  → the per-ewm-sm HLLSet registry (gate + confirmation)
 //! - `setkey`      → Mode B scores of one query HLLSet vs candidate HLLSets
+//! - `gate`        → per-host codebook gates (`op: put|list|get`)
+//! - `to_prompt`   → materialize-to-prompt through a codebook gate (the door)
+//! - `door_probe`  → door-guard verdict on a broadcast HLLSet (hex bytes)
+//! - `setkey_hex`  → Mode B scores over HLLSet hex bytes
+//! - `policy_put`  → publish the active policy into the store's named slot
+//!                   `@policy` (the trainer's commit-as-publication channel)
+//! - `policy_get`  → read the active policy (the server's hot-swap read)
 //!
-//! The service holds a `StateMachine<MemoryStore>` plus a `StateCache`, so
-//! every command sees the same evolving state (the N=1 eLLM loop).
+//! The service is generic over the object store: `Service<MemoryStore>` for
+//! tests/demos, `Service<LooseStore>` when started as `ellm-lattice <repo>`
+//! so two processes (server + trainer) share one persisted ewm-git store.
 
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, Write};
 
 use ewm_app::{StateCache, StateMachine};
-use ewm_git::{view, MemoryStore, ObjectId};
+use ewm_git::{view, LooseStore, MemoryStore, ObjectId, ObjectStore};
 use hllset_contracts::token::{parse_token_id, token_in_bytes, TokenId};
 use hllset_core::HLLSet;
 use hllset_morphisms::{ingest, ingest_gated_set, materialize, Ingest};
@@ -94,18 +102,43 @@ struct SetKeyHexArgs {
     nodes: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct PolicyPutArgs {
+    policy: Value,
+}
+
 /// The side-car service: the [UM] harness plus the shared cache.
-struct Service {
-    um: StateMachine<MemoryStore>,
+///
+/// Generic over the object store so one binary serves both the in-memory
+/// demo (`Service<MemoryStore>`) and the two-process split
+/// (`Service<LooseStore>`, sharing a persisted ewm-git store on disk).
+struct Service<S: ObjectStore> {
+    um: StateMachine<S>,
     cache: StateCache,
 }
 
-impl Service {
+impl Service<MemoryStore> {
     fn new() -> Self {
         Self {
             um: StateMachine::new(MemoryStore::default()),
             cache: StateCache::empty(),
         }
+    }
+}
+
+impl<S: ObjectStore> Service<S> {
+    fn with_store(store: S) -> Self {
+        Self {
+            um: StateMachine::new(store),
+            cache: StateCache::empty(),
+        }
+    }
+
+    /// Recovery: open the persisted store and restore the cache from HEAD.
+    fn open_store(store: S) -> Self {
+        let um = StateMachine::open(store);
+        let cache = StateCache::restore(um.repo());
+        Self { um, cache }
     }
 
     fn handle(&mut self, line: &str) -> String {
@@ -127,6 +160,8 @@ impl Service {
             "gate" => self.handle_gate(request.id, request.args),
             "to_prompt" => self.handle_to_prompt(request.id, request.args),
             "door_probe" => self.handle_door_probe(request.id, request.args),
+            "policy_put" => self.handle_policy_put(request.id, request.args),
+            "policy_get" => self.handle_policy_get(request.id),
             "setkey" => handle_setkey(request.id, request.args),
             "setkey_hex" => handle_setkey_hex(request.id, request.args),
             other => error(request.id, format!("unknown command: {other}")),
@@ -434,6 +469,32 @@ impl Service {
 
         ok(id, json!({ "verdicts": verdicts }))
     }
+
+    /// `policy_put {policy}` — the trainer publishes the active policy into
+    /// the store's named slot `@policy`. This is commit-as-publication: the
+    /// server never sees the policy until it is written here.
+    fn handle_policy_put(&mut self, id: String, args: Value) -> String {
+        let args: PolicyPutArgs = match serde_json::from_value(args) {
+            Ok(a) => a,
+            Err(e) => return error(id, format!("policy_put args: {e}")),
+        };
+        let text = serde_json::to_string(&args.policy).unwrap_or_else(|_| "null".to_string());
+        match self.um.repo_mut().store_mut().put_gate("@policy", &text) {
+            Ok(()) => ok(id, json!({ "published": true, "slot": "@policy" })),
+            Err(e) => error(id, format!("policy_put: {e}")),
+        }
+    }
+
+    /// `policy_get` — the server's hot-swap read of the active policy.
+    fn handle_policy_get(&self, id: String) -> String {
+        match self.um.repo().store().get_gate("@policy") {
+            Ok(text) => match serde_json::from_str::<Value>(&text) {
+                Ok(policy) => ok(id, json!({ "policy": policy })),
+                Err(_) => ok(id, json!({ "policy": Value::Null, "corrupt": true })),
+            },
+            Err(_) => ok(id, json!({ "policy": Value::Null })),
+        }
+    }
 }
 
 /// Fraction of the query's set bits covered by the gate.
@@ -526,10 +587,17 @@ fn error(id: String, message: String) -> String {
 }
 
 fn main() {
+    let repo_path = std::env::args().nth(1);
+    match repo_path {
+        Some(path) => run(Service::open_store(LooseStore::new(path))),
+        None => run(Service::new()),
+    }
+}
+
+fn run<S: ObjectStore>(mut service: Service<S>) {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let mut service = Service::new();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -551,7 +619,7 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn call(service: &mut Service, cmd: &str, args: Value) -> Value {
+    fn call<S: ObjectStore>(service: &mut Service<S>, cmd: &str, args: Value) -> Value {
         let line = json!({ "id": "t", "cmd": cmd, "args": args }).to_string();
         serde_json::from_str(&service.handle(&line)).unwrap()
     }
@@ -766,6 +834,48 @@ mod tests {
         let hex_str = response["data"]["working_hex"].as_str().unwrap();
         let parsed = decode_hllset(hex_str).expect("working_hex must round-trip");
         assert!(parsed.popcount() > 0);
+    }
+
+    #[test]
+    fn policy_put_and_get_roundtrip() {
+        let mut service = Service::new();
+        let put = call(
+            &mut service,
+            "policy_put",
+            json!({ "policy": { "theta": 0.4, "door": "surprise-v0" } }),
+        );
+        assert_eq!(put["data"]["published"], true);
+
+        let get = call(&mut service, "policy_get", json!({}));
+        assert_eq!(get["data"]["policy"]["theta"], 0.4);
+        assert_eq!(get["data"]["policy"]["door"], "surprise-v0");
+    }
+
+    #[test]
+    fn loose_store_is_shared_between_two_services() {
+        let dir = std::env::temp_dir().join(format!("ellm-lattice-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let mut writer = Service::with_store(LooseStore::new(&dir));
+        call(
+            &mut writer,
+            "gate",
+            json!({ "op": "put", "user": "ellm", "tokens": ["tid1", "tid2"] }),
+        );
+        call(
+            &mut writer,
+            "policy_put",
+            json!({ "policy": { "generation": 7 } }),
+        );
+
+        // A second process's side-car opens the same store and sees both.
+        let mut reader = Service::open_store(LooseStore::new(&dir));
+        let gates = call(&mut reader, "gate", json!({ "op": "list" }));
+        assert!(gates["data"]["gates"].as_array().unwrap().contains(&json!("ellm")));
+        let policy = call(&mut reader, "policy_get", json!({}));
+        assert_eq!(policy["data"]["policy"]["generation"], 7);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

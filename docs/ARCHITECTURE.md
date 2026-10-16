@@ -1,6 +1,6 @@
 # eLLM — Emerging LLM Architecture
 
-> **Status:** architecture definition + **Phase 0–3 complete** (workspace, full `ellm-attn`, real lattice protocol, the door, the broadcast seam), 2026-10-15.
+> **Status:** architecture definition + **Phase 0–4 complete** (workspace, full `ellm-attn`, real lattice protocol, the door, the broadcast seam, the two-process loop), 2026-10-15.
 > **Scope:** a **local LLM with the full travel loop** — a small transformer that
 > runs on the RTX 3060 12 GB, uses `ewm-state-machine` as its exact,
 > content-addressed memory (the map), materializes/ingests through the door,
@@ -345,7 +345,8 @@ change to the eLLM.
 │  LAYER 2 · LATTICE PROTOCOL (JSON lines over stdin/stdout)              │
 │  ellm.lattice           client; commands: ping/ingest/materialize/      │
 │                         state/commit/hllset_lut/gate/to_prompt/         │
-│                         door_probe/setkey/setkey_hex                    │
+│                         door_probe/policy_put/policy_get/setkey/        │
+│                         setkey_hex                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  LAYER 1 · LATTICE SIDE-CAR (Rust workspace: lattice/)                  │
 │  ellm-lattice           CLI service reusing ewm-state-machine crates    │
@@ -617,8 +618,8 @@ only candidate); phase 6 attaches a second LLM and demonstrates growth.
 | **1** | wire the real lattice: `ellm-lattice` service over `ewm-state-machine` (ping/ingest/materialize/state/commit/hllset_lut/setkey); `ellm-attn` complete (kstorage, bit_table, bridge, setkey, hybrid, token_mask, context_vocab, moe); routing-log ingestion script + `LatticeState` snapshots | **done** |
 | **2** | the door: materialize-to-prompt with coverage invariant; the eLLM's own codebook gate (single-LLM case); probes held out | **done** |
 | **3** | door-guard broadcast seam at N=1 (degenerate self-selection): Mode B discovery (`setkey`/`setkey_hex`) + `door_probe` verdict on the eLLM's own side-car; `BroadcastDispatcher` + `NativeStubPolicy` + selection (0→fallback, 1→hire, >1→user) | **done** |
-| **4** | two-process split + closed travel loop at N=1: server (broadcast + generate + selection) and trainer (policy learner); postponed commit; policy hot-swap; surprise-gated door policy v0 | next |
-| **5** | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first, soft-label KL vs native labels); optional Mode C λ; guard set; evaluation | |
+| **4** | two-process split + closed travel loop at N=1: `TravelServer` (broadcast + generate + selection, policy hot-swap) and `Trainer` (scheduler + WIP learner + guard set, commit-as-publication via the `@policy` slot in the shared ewm-git store); `Service<LooseStore>` (disk-persisted side-car, `ellm-lattice <repo>`); surprise-gated door policy v0 | **done** |
+| **5** | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first, soft-label KL vs native labels); optional Mode C λ; guard set; evaluation | next |
 | **6** | growth experiment: **attach a second LLM** (its own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`); the broadcast collects two door verdicts with **no change to the eLLM**; full travel loop with lattice memory; publish numbers | |
 
 Each phase lands with a notebook in `notebooks/` and a baseline test count, in

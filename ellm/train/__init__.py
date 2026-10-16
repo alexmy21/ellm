@@ -1,5 +1,7 @@
-"""Training — window driver, guards, checkpoints (Phase 4+)."""
+"""Training — the policy learner process."""
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from .trainer import GuardSet, Trainer
+
+__all__ = ["GuardSet", "Trainer"]

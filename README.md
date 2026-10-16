@@ -114,8 +114,8 @@ only candidate); phase 6 attaches a second LLM and demonstrates growth.
 | 1 | wire the real lattice: `ellm-lattice` service (ping/ingest/materialize/state/commit/hllset_lut/setkey), `ellm-attn` complete, routing-log ingestion | done |
 | 2 | the door: materialize-to-prompt with coverage invariant; the eLLM's own codebook gate (single-LLM case) | done |
 | 3 | door-guard broadcast seam at N=1 (degenerate self-selection): Mode B discovery + `door_probe` verdict on the eLLM's own side-car + selection | done |
-| 4 | two-process split + closed travel loop at N=1; surprise-gated door policy v0 | next |
-| 5 | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first); optional Mode C λ | |
+| 4 | two-process split + closed travel loop at N=1; surprise-gated door policy v0 | done |
+| 5 | first learned policy at N=1: LoRA broadcast-policy training (which HLLSets to send first); optional Mode C λ | next |
 | 6 | growth experiment: attach a second LLM (own ewm-sm + `hllsetLUT` + `H(t)` + `door.py`); broadcast collects two door verdicts with no change to the eLLM | |
 
 ## License
