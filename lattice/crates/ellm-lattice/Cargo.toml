@@ -1,0 +1,17 @@
+[package]
+name = "ellm-lattice"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ellm-attn = { path = "../ellm-attn" }
+hllset-contracts.workspace = true
+hllset-core.workspace = true
+hllset-morphisms.workspace = true
+ewm-app.workspace = true
+ewm-git.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true

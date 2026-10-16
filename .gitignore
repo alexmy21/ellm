@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Rust (lattice/ workspace)
+lattice/target/
+**/*.rs.bk
+
+# Python
+*.egg-info/
+.venv/

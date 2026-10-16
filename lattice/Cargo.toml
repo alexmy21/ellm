@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ellm-attn",
+    "crates/ellm-lattice",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["eLLM Project"]
+license = "MIT"
+
+[workspace.dependencies]
+# ── EWM state machine foundation — by path, never vendored (GOVERNANCE.md §5) ──
+hllset-contracts = { path = "../../ewm-state-machine/crates/hllset-contracts" }
+hllset-cid = { path = "../../ewm-state-machine/crates/hllset-cid" }
+hllset-core = { path = "../../ewm-state-machine/crates/hllset-core" }
+hllset-lut = { path = "../../ewm-state-machine/crates/hllset-lut" }
+hllset-morphisms = { path = "../../ewm-state-machine/crates/hllset-morphisms" }
+hllset-storage = { path = "../../ewm-state-machine/crates/hllset-storage" }
+context-tree = { path = "../../ewm-state-machine/crates/context-tree" }
+ewm-git = { path = "../../ewm-state-machine/crates/ewm-git" }
+ewm-app = { path = "../../ewm-state-machine/crates/ewm-app" }
+ewm-boolring = { path = "../../ewm-state-machine/crates/ewm-boolring" }
+ewm-scene = { path = "../../ewm-state-machine/crates/ewm-scene" }
+ewm-cache = { path = "../../ewm-state-machine/crates/ewm-cache" }
+
+# ── external ──
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"

@@ -1,0 +1,11 @@
+[package]
+name = "ellm-attn"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+hllset-contracts.workspace = true
+hllset-core.workspace = true
+hllset-lut.workspace = true

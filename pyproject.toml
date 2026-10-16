@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ellm"
+version = "0.1.0"
+description = "Emerging LLM — a local LLM with the EWM lattice travel loop"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+gpu = ["torch>=2.4"]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["ellm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
